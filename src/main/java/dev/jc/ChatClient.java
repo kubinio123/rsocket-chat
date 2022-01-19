@@ -10,30 +10,56 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 
 import java.time.Duration;
-
-import static java.nio.file.Files.readAllLines;
-import static java.nio.file.Paths.get;
+import java.util.function.Supplier;
 
 public class ChatClient {
 
-    public static void start(String name) {
-        try {
-            Logger logger = LoggerFactory.getLogger(ChatClient.class);
+    private static final Logger logger = LoggerFactory.getLogger(ChatClient.class);
 
-            Flux<Payload> messages = Flux.fromIterable(readAllLines(get("src/main/resources/chat.txt")))
-                    .delayElements(Duration.ofSeconds(5))
-                    .map(line -> DefaultPayload.create(name + ": " + line));
+    public static void fireAndForget(String name) {
+        RSocket rs = rsocket();
+        forever(() -> rs.fireAndForget(DefaultPayload.create(name + ": Hi")).block());
+    }
 
-            RSocket socket = RSocketConnector.connectWith(TcpClientTransport.create("localhost", 7000)).block();
+    public static void requestResponse(String name) {
+        RSocket rs = rsocket();
+        forever(() -> {
+            Payload resp = rs.requestResponse(DefaultPayload.create(name + ": Hi, reply?")).block();
+            logger.info(resp.getDataUtf8());
+            return null;
+        });
+    }
 
-            socket.requestChannel(messages)
-                    .doFinally(signalType -> socket.dispose())
-                    .subscribe(msg -> logger.info(msg.getDataUtf8()));
+    public static void requestStream(String name) {
+        RSocket rs = rsocket();
+        rs.requestStream(DefaultPayload.create(name + ": Hi, I am listening..."))
+                .map(Payload::getDataUtf8)
+                .doOnNext(logger::info)
+                .doFinally(s -> rs.dispose())
+                .blockLast();
+    }
 
-            Thread.currentThread().join();
+    public static void requestChannel(String name) {
+        RSocket rs = rsocket();
+        rs.requestChannel(Flux.interval(Duration.ofSeconds(5)).map(i -> DefaultPayload.create(name + ": spam " + i)))
+                .map(Payload::getDataUtf8)
+                .doOnNext(logger::info)
+                .doFinally(s -> rs.dispose())
+                .blockLast();
+    }
 
-        } catch (Exception e) {
-            System.out.println(e);
+    private static RSocket rsocket() {
+        return RSocketConnector.connectWith(TcpClientTransport.create("localhost", 7000)).block();
+    }
+
+    private static void forever(Supplier<Void> sp) {
+        while (true) {
+            sp.get();
+            try {
+                Thread.sleep(5000L);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
         }
     }
 }

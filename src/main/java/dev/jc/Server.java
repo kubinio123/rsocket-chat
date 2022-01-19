@@ -1,10 +1,15 @@
 package dev.jc;
 
+import io.rsocket.Payload;
+import io.rsocket.RSocket;
 import io.rsocket.SocketAcceptor;
 import io.rsocket.core.RSocketServer;
 import io.rsocket.transport.netty.server.TcpServerTransport;
+import org.reactivestreams.Publisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 public class Server {
 
@@ -13,12 +18,33 @@ public class Server {
 
     public static void main(String[] args) throws InterruptedException {
 
-        SocketAcceptor sa = SocketAcceptor.forRequestChannel(payloads -> {
-            payloads.subscribe(chat);
-            return chat.messages();
-        });
+        RSocket rSocket = new RSocket() {
+            @Override
+            public Mono<Void> fireAndForget(Payload payload) {
+                chat.sendMessage(payload);
+                return Mono.empty();
+            }
 
-        RSocketServer.create(sa).bindNow(TcpServerTransport.create("localhost", 7000));
+            @Override
+            public Mono<Payload> requestResponse(Payload payload) {
+                chat.sendMessage(payload);
+                return Mono.just(Chat.ACK);
+            }
+
+            @Override
+            public Flux<Payload> requestStream(Payload payload) {
+                chat.sendMessage(payload);
+                return chat.messages();
+            }
+
+            @Override
+            public Flux<Payload> requestChannel(Publisher<Payload> payloads) {
+                payloads.subscribe(chat);
+                return chat.messages();
+            }
+        };
+
+        RSocketServer.create(SocketAcceptor.with(rSocket)).bindNow(TcpServerTransport.create("localhost", 7000));
 
         logger.info("started chat server");
 

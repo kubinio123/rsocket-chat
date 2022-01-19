@@ -1,6 +1,7 @@
 package dev.jc;
 
 import io.rsocket.Payload;
+import io.rsocket.util.DefaultPayload;
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
 import org.slf4j.Logger;
@@ -10,11 +11,18 @@ import reactor.core.publisher.Sinks;
 
 public class Chat implements Subscriber<Payload> {
 
+    public static final Payload ACK = DefaultPayload.create("Message has been send");
+
     private static final Logger logger = LoggerFactory.getLogger(Chat.class);
     private static final Sinks.Many<Payload> chatroom = Sinks.many().multicast().onBackpressureBuffer();
 
     public Flux<Payload> messages() {
         return chatroom.asFlux();
+    }
+
+    public void sendMessage(Payload payload) {
+        logger.info("new message " + payload.getDataUtf8());
+        chatroom.tryEmitNext(payload);
     }
 
     @Override
@@ -27,8 +35,7 @@ public class Chat implements Subscriber<Payload> {
 
     @Override
     public void onNext(Payload payload) {
-        logger.info("new message " + payload.getDataUtf8());
-        chatroom.tryEmitNext(payload);
+        sendMessage(payload);
     }
 
     @Override

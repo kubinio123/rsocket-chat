@@ -1,8 +1,8 @@
 package dev.jc;
 
-public class Client1 {
+public class Client4 {
 
     public static void main(String[] args) {
-        ChatClient.fireAndForget("Jacob");
+        ChatClient.requestChannel("Bob");
     }
 }
